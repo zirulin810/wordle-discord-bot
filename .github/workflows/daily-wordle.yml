@@ -2,6 +2,7 @@ name: daily-wordle
 on:
   schedule:
     - cron: "59 15 * * *"  # UTC 15:59 = 台北時間 23:59
+  workflow_dispatch:  # 允許手動觸發
 jobs:
   run:
     runs-on: ubuntu-latest

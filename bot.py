@@ -8,13 +8,10 @@ import google.generativeai as genai
 from PIL import Image
 from datetime import datetime, timezone
 
-# ── 設定 ──────────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 DISCORD_TOKEN  = os.environ["DISCORD_TOKEN"]
-# 要監聽的頻道 ID（數字），可設多個，留空串列代表監聽全部頻道
 WATCH_CHANNEL_IDS: list[int] = [1414411323441414258]
 
-# ── Gemini 初始化 ──────────────────────────────────────────────────────────────
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
@@ -29,7 +26,6 @@ PROMPT = """
 　　　<該例句的繁體中文翻譯>
 """
 
-# ── Discord Bot ────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
@@ -66,7 +62,6 @@ async def run_once():
     today = datetime.now(timezone.utc).date()
     async with aiohttp.ClientSession(headers=headers) as session:
         for channel_id in WATCH_CHANNEL_IDS:
-            # 獲取最近 10 條訊息
             async with session.get(f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=10") as resp:
                 if resp.status != 200:
                     print(f"⚠️ 無法獲取頻道 {channel_id} 訊息：HTTP {resp.status}")
@@ -102,8 +97,6 @@ async def run_once():
                         print(f"✅ 已回覆訊息 ID: {msg['id']}")
                     else:
                         print(f"❌ 回覆失敗：HTTP {reply_resp.status}")
-
-                # 只處理一個訊息，避免重複
                 break
 
 

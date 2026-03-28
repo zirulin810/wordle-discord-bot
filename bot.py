@@ -6,7 +6,9 @@ import aiohttp
 import discord
 import google.generativeai as genai
 from PIL import Image
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+TW_TZ = timezone(timedelta(hours=8))
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 DISCORD_TOKEN  = os.environ["DISCORD_TOKEN"]
@@ -15,15 +17,17 @@ WATCH_CHANNEL_IDS: list[int] = [1414411323441414258]
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
-PROMPT = """
+def build_prompt() -> str:
+    today = datetime.now(TW_TZ).strftime("%Y/%m/%d")
+    return f"""
 該圖片為 Wordle 的遊戲截圖。
-請從圖片中辨識出今日的答案（如果有的話），並依照以下範例格式輸出，不得新增或省略任何欄位：
+請從圖片中辨識出今日的答案（如果有的話），並**嚴格**依照以下格式輸出，不得新增或省略任何欄位：
 
-1999/09/09（今天日期)
-APPLE(英文單字，大寫)
-n.(詞性縮寫) 蘋果(繁體中文解釋)
-This is an apple.(一句英文例句)
-這是一顆蘋果。(該例句的繁體中文翻譯）
+{today}
+<英文單字，大寫>
+<詞性縮寫> <繁體中文解釋>
+<一句英文例句>
+<該例句的繁體中文翻譯>
 """
 
 intents = discord.Intents.default()
@@ -33,7 +37,7 @@ client = discord.Client(intents=intents)
 
 async def analyze_image(image_bytes: bytes) -> str:
     image = Image.open(io.BytesIO(image_bytes))
-    response = await asyncio.to_thread(model.generate_content, [PROMPT, image])
+    response = await asyncio.to_thread(model.generate_content, [build_prompt(), image])
     return response.text.strip()
 
 
@@ -59,7 +63,7 @@ async def process_image(session: aiohttp.ClientSession, url: str, filename: str)
 
 async def run_once():
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(TW_TZ).date()
     async with aiohttp.ClientSession(headers=headers) as session:
         for channel_id in WATCH_CHANNEL_IDS:
             async with session.get(f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=10") as resp:
@@ -69,7 +73,7 @@ async def run_once():
                 messages = await resp.json()
 
             for msg in messages:
-                msg_date = datetime.fromisoformat(msg["timestamp"]).date()
+                msg_date = datetime.fromisoformat(msg["timestamp"]).astimezone(TW_TZ).date()
                 if msg_date != today:
                     continue
 

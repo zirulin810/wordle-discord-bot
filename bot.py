@@ -5,6 +5,7 @@ import asyncio
 import aiohttp
 import discord
 from google import genai
+from google.genai import errors as genai_errors
 from PIL import Image
 from datetime import datetime, timezone, timedelta
 
@@ -38,12 +39,19 @@ async def analyze_image(image_bytes: bytes) -> str:
     image = Image.open(io.BytesIO(image_bytes))
     mime_type = Image.MIME.get(image.format, "image/jpeg")
     image_part = genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-    response = await asyncio.to_thread(
-        client_genai.models.generate_content,
-        model="gemini-2.5-flash",
-        contents=[build_prompt(), image_part],
-    )
-    return response.text.strip()
+    models = ["gemini-2.5-flash", "gemini-2.0-flash"]
+    for attempt, model in enumerate(models):
+        try:
+            response = await asyncio.to_thread(
+                client_genai.models.generate_content,
+                model=model,
+                contents=[build_prompt(), image_part],
+            )
+            return response.text.strip()
+        except genai_errors.ServerError as e:
+            print(f"⚠️ {model} 回應失敗（{e}）{'，改用備用模型' if attempt < len(models) - 1 else '，已無備用模型'}")
+            if attempt == len(models) - 1:
+                raise
 
 
 def format_reply(filename: str, analysis: str) -> str:

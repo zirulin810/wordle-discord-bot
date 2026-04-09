@@ -5,6 +5,7 @@ import asyncio
 import aiohttp
 import discord
 from google import genai
+from google.genai import types
 from PIL import Image
 from datetime import datetime, timezone, timedelta
 
@@ -36,10 +37,12 @@ client = discord.Client(intents=intents)
 
 async def analyze_image(image_bytes: bytes) -> str:
     image = Image.open(io.BytesIO(image_bytes))
+    mime_type = Image.MIME.get(image.format, "image/jpeg")
+    image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
     response = await asyncio.to_thread(
         client_genai.models.generate_content,
         model="gemini-2.5-flash",
-        contents=[build_prompt(), image],
+        contents=[build_prompt(), image_part],
     )
     return response.text.strip()
 

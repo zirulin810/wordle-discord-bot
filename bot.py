@@ -4,7 +4,7 @@ import sys
 import asyncio
 import aiohttp
 import discord
-import google.generativeai as genai
+from google import genai
 from PIL import Image
 from datetime import datetime, timezone, timedelta
 
@@ -14,8 +14,7 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 DISCORD_TOKEN  = os.environ["DISCORD_TOKEN"]
 WATCH_CHANNEL_IDS: list[int] = [1414411323441414258]
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
+client_genai = genai.Client(api_key=GEMINI_API_KEY)
 
 def build_prompt() -> str:
     today = datetime.now(TW_TZ).strftime("%Y/%m/%d")
@@ -37,7 +36,11 @@ client = discord.Client(intents=intents)
 
 async def analyze_image(image_bytes: bytes) -> str:
     image = Image.open(io.BytesIO(image_bytes))
-    response = await asyncio.to_thread(model.generate_content, [build_prompt(), image])
+    response = await asyncio.to_thread(
+        client_genai.models.generate_content,
+        model="gemini-2.5-flash",
+        contents=[build_prompt(), image],
+    )
     return response.text.strip()
 
 

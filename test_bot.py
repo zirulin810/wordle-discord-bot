@@ -44,8 +44,57 @@ def test_dotenv_import():
     print("[PASS] python-dotenv import")
 
 
+def _load_env():
+    """Load .env and return True if it exists, False otherwise."""
+    from pathlib import Path
+    from dotenv import load_dotenv
+    if not Path(".env").exists():
+        return False
+    load_dotenv()
+    return True
+
+
+def test_gemini_connectivity():
+    import os
+    from google import genai
+
+    if not _load_env():
+        print("[SKIP] Gemini connectivity — .env not found")
+        return
+
+    assert os.environ.get("GEMINI_API_KEY"), "GEMINI_API_KEY is missing or empty in .env"
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    models = list(client.models.list())
+    assert any("gemini" in m.name for m in models), "No Gemini models found"
+    print(f"[PASS] Gemini API reachable ({len(models)} models available)")
+
+
+def test_discord_connectivity():
+    import os
+    import requests
+
+    if not _load_env():
+        print("[SKIP] Discord connectivity — .env not found")
+        return
+
+    assert os.environ.get("DISCORD_TOKEN"), "DISCORD_TOKEN is missing or empty in .env"
+    resp = requests.get(
+        "https://discord.com/api/v10/users/@me",
+        headers={"Authorization": f"Bot {os.environ['DISCORD_TOKEN']}"},
+        timeout=10,
+    )
+    assert resp.status_code == 200, f"Discord token invalid (HTTP {resp.status_code})"
+    print(f"[PASS] Discord token valid (bot: {resp.json().get('username', '?')})")
+
+
 if __name__ == "__main__":
-    tests = [test_syntax, test_imports_and_image_part, test_dotenv_import]
+    tests = [
+        test_syntax,
+        test_imports_and_image_part,
+        test_dotenv_import,
+        test_gemini_connectivity,
+        test_discord_connectivity,
+    ]
     failed = 0
     for t in tests:
         try:

@@ -4,16 +4,19 @@ import sys
 import asyncio
 import aiohttp
 import discord
+from dotenv import load_dotenv
 from google import genai
 from google.genai import errors as genai_errors
 from PIL import Image
 from datetime import datetime, timezone, timedelta
 
+load_dotenv()
+
 TW_TZ = timezone(timedelta(hours=8))
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-DISCORD_TOKEN  = os.environ["DISCORD_TOKEN"]
-WATCH_CHANNEL_IDS: list[int] = [1414411323441414258]
+GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
+DISCORD_TOKEN     = os.environ["DISCORD_TOKEN"]
+WATCH_CHANNEL_IDS = [int(x) for x in os.environ["WATCH_CHANNEL_IDS"].split(",") if x.strip()]
 
 client_genai = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -49,7 +52,7 @@ async def analyze_image(image_bytes: bytes) -> str:
             )
             return response.text.strip()
         except genai_errors.ServerError as e:
-            print(f"⚠️ {model} 回應失敗（{e}）{'，改用備用模型' if attempt < len(models) - 1 else '，已無備用模型'}")
+            print(f"[WARN] {model} failed ({e}){', retrying with fallback model' if attempt < len(models) - 1 else ', no more fallback models'}")
             if attempt == len(models) - 1:
                 raise
 
@@ -65,11 +68,11 @@ def format_reply(filename: str, analysis: str) -> str:
 async def process_image(session: aiohttp.ClientSession, url: str, filename: str) -> str:
     async with session.get(url) as resp:
         if resp.status != 200:
-            print(f"⚠️ 無法下載圖片：{filename}（HTTP {resp.status}）")
+            print(f"[WARN] failed to download image: {filename} (HTTP {resp.status})")
             return None
         image_bytes = await resp.read()
 
-    print(f"🔍 分析圖片：{filename}")
+    print(f"[INFO] analyzing image: {filename}")
     analysis = await analyze_image(image_bytes)
     return format_reply(filename, analysis)
 
@@ -81,7 +84,7 @@ async def run_once():
         for channel_id in WATCH_CHANNEL_IDS:
             async with session.get(f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=10") as resp:
                 if resp.status != 200:
-                    print(f"⚠️ 無法獲取頻道 {channel_id} 訊息：HTTP {resp.status}")
+                    print(f"[WARN] failed to fetch channel {channel_id} messages: HTTP {resp.status}")
                     continue
                 messages = await resp.json()
 
@@ -111,19 +114,19 @@ async def run_once():
                 }
                 async with session.post(f"https://discord.com/api/v10/channels/{channel_id}/messages", json=payload) as reply_resp:
                     if reply_resp.status == 200:
-                        print(f"✅ 已回覆訊息 ID: {msg['id']}")
+                        print(f"[OK] replied to message ID: {msg['id']}")
                     else:
-                        print(f"❌ 回覆失敗：HTTP {reply_resp.status}")
+                        print(f"[ERROR] reply failed: HTTP {reply_resp.status}")
                 break
 
 
 @client.event
 async def on_ready():
-    print(f"✅ Bot 已上線：{client.user}（ID: {client.user.id}）")
+    print(f"[OK] bot online: {client.user} (ID: {client.user.id})")
     if WATCH_CHANNEL_IDS:
-        print(f"📌 監聽頻道 ID：{WATCH_CHANNEL_IDS}")
+        print(f"[INFO] watching channel IDs: {WATCH_CHANNEL_IDS}")
     else:
-        print("📌 監聽所有頻道")
+        print("[INFO] watching all channels")
 
 
 @client.event
@@ -151,7 +154,7 @@ async def on_message(message: discord.Message):
                         await message.reply(reply)
 
                 except Exception as e:
-                    print(f"❌ 處理圖片時發生錯誤：{e}")
+                    print(f"[ERROR] failed to process image: {e}")
 
 
 if __name__ == "__main__":

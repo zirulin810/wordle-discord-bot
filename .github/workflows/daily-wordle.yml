@@ -16,3 +16,4 @@ jobs:
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WATCH_CHANNEL_IDS: ${{ secrets.WATCH_CHANNEL_IDS }}

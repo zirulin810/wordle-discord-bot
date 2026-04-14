@@ -18,31 +18,15 @@ When GitHub Actions fails, follow this process:
 
 Install dependencies locally if needed:
 ```bash
-pip install google-genai Pillow aiohttp discord.py --user
+pip install -r requirements.txt --user
 ```
 
-Run these checks in order:
+Run the test script:
 ```bash
-# 1. Syntax check
-python -m py_compile bot.py
-
-# 2. Import + logic check (no API key needed)
-python -c "
-from google import genai
-from PIL import Image
-import io
-img = Image.new('RGB', (100, 100))
-buf = io.BytesIO()
-img.save(buf, format='JPEG')
-image_bytes = buf.getvalue()
-image = Image.open(io.BytesIO(image_bytes))
-mime_type = Image.MIME.get(image.format, 'image/jpeg')
-image_part = genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-print('OK:', type(image_part))
-"
+python test_bot.py
 ```
 
-Only proceed to push if both checks pass.
+Only proceed to push if all tests pass.
 
 ### Step 3: Commit and push
 
@@ -78,8 +62,14 @@ Then trigger GitHub Actions manually via `workflow_dispatch` to confirm the fix.
 |------|---------|
 | `bot.py` | Main bot logic — Gemini API call is in `analyze_image()` |
 | `requirements.txt` | Python dependencies |
+| `test_bot.py` | Local test script — run before every push |
+| `.env.example` | Template for local environment variables |
 | `.github/workflows/daily-wordle.yml` | GitHub Actions: runs at 14:30 UTC (22:30 TW) daily |
 
-## Environment variables (set as GitHub Secrets)
-- `DISCORD_TOKEN` — Discord bot token
-- `GEMINI_API_KEY` — Google Gemini API key
+## Environment variables
+
+**Local development:** Copy `.env.example` to `.env` and fill in real values.
+`.env` is listed in `.gitignore` and will never be committed.
+
+**GitHub Actions:** Values are injected automatically from GitHub Secrets — no `.env` file needed.
+Required secrets: `DISCORD_TOKEN`, `GEMINI_API_KEY`, `WATCH_CHANNEL_IDS` (comma-separated channel IDs).

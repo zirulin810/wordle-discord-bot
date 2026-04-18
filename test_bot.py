@@ -90,27 +90,12 @@ def test_fetch_flash_models_diagnostic():
 
 def test_fetch_flash_models():
     """_fetch_flash_models() must return at least one usable model."""
-    import os
-    from google import genai
-
     if not _load_env():
         print("[SKIP] fetch flash models — .env not found")
         return
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
-    SKIP_TAGS = ("preview", "exp", "latest", "tts", "audio", "live", "-image")
-
-    result = []
-    for m in client.models.list():
-        name = m.name
-        if "flash" not in name:
-            continue
-        if any(tag in name for tag in SKIP_TAGS):
-            continue
-        result.append(name.removeprefix("models/"))
-    result.sort(reverse=True)
-
+    from bot import _fetch_flash_models
+    result = _fetch_flash_models()
     assert result, (
         "No stable Flash models found — "
         "see [DIAG] output above to fix SKIP_TAGS in _fetch_flash_models()"

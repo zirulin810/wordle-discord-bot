@@ -18,13 +18,13 @@ DISCORD_TOKEN     = os.environ["DISCORD_TOKEN"]
 WATCH_CHANNEL_IDS = [int(x) for x in os.environ["WATCH_CHANNEL_IDS"].split(",") if x.strip()]
 
 client_genai = genai.Client(api_key=GEMINI_API_KEY)
-_SKIP_TAGS = ("preview", "exp", "latest", "tts", "audio", "live", "-image")
+SKIP_TAGS = ("preview", "exp", "latest", "tts", "audio", "live", "-image", "lite")
 
 
 def _fetch_flash_models() -> list[str]:
     models = sorted(
         [m.name.removeprefix("models/") for m in client_genai.models.list()
-         if "flash" in m.name and not any(t in m.name for t in _SKIP_TAGS)],
+         if "flash" in m.name and not any(t in m.name for t in SKIP_TAGS)],
         reverse=True,
     )
     if not models:
@@ -38,12 +38,12 @@ GEMINI_MODELS = _fetch_flash_models()
 def build_prompt(date_str: str) -> str:
     return f"""
 該圖片為 Wordle 的遊戲截圖。
-請從圖片中辨識出今日的答案（如果有的話），並**嚴格**依照以下格式輸出，不得新增或省略任何欄位：
+請從圖片中辨識出今日的答案（全綠的單字），並**嚴格**依照以下格式輸出，不得新增或省略任何欄位：
 
 {date_str}
 <英文單字，大寫>
 <詞性縮寫> <繁體中文解釋>
-<一句英文例句>
+<含該單字的英文例句>
 <該例句的繁體中文翻譯>
 """
 

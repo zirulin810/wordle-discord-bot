@@ -14,19 +14,27 @@ When GitHub Actions fails, follow this process:
 2. Read the relevant source files: `bot.py`, `requirements.txt`
 3. Apply the fix
 
-### Step 2: Test locally before pushing
+### Step 2: Test-driven development
+
+When fixing a bug or adding new logic:
+
+1. **Write a failing test first** in `test_bot.py` that reproduces the problem
+2. Run the test to confirm it fails:
+   ```bash
+   python test_bot.py
+   ```
+3. Fix the implementation in `bot.py`
+4. Run again until the test passes
+5. Only push when all tests pass
 
 Install dependencies locally if needed:
 ```bash
 pip install -r requirements.txt --user
 ```
 
-Run the test script:
-```bash
-python test_bot.py
-```
-
-Only proceed to push if all tests pass.
+> For API behavior that is hard to predict (e.g. model list structure,
+> response fields), add a `[DIAG]` test first that prints raw data, then
+> write the assertion test based on what you observe.
 
 ### Step 3: Commit and push
 

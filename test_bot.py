@@ -69,6 +69,55 @@ def test_gemini_connectivity():
     print(f"[PASS] Gemini API reachable ({len(models)} models available)")
 
 
+def test_fetch_flash_models_diagnostic():
+    """Print raw model data to diagnose filtering issues — always passes."""
+    import os
+    from google import genai
+
+    if not _load_env():
+        print("[SKIP] flash models diagnostic — .env not found")
+        return
+
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    all_models = list(client.models.list())
+    flash_candidates = [m for m in all_models if "flash" in m.name.lower()]
+    print(f"[DIAG] total models: {len(all_models)}")
+    print(f"[DIAG] flash candidates ({len(flash_candidates)}):")
+    for m in flash_candidates:
+        methods = getattr(m, "supported_generation_methods", [])
+        print(f"  name={m.name!r}  methods={methods}")
+
+
+def test_fetch_flash_models():
+    """_fetch_flash_models() must return at least one usable model."""
+    import os
+    from google import genai
+
+    if not _load_env():
+        print("[SKIP] fetch flash models — .env not found")
+        return
+
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+    SKIP_TAGS = ("preview", "exp", "latest", "tts", "audio", "live", "-image")
+
+    result = []
+    for m in client.models.list():
+        name = m.name
+        if "flash" not in name:
+            continue
+        if any(tag in name for tag in SKIP_TAGS):
+            continue
+        result.append(name.removeprefix("models/"))
+    result.sort(reverse=True)
+
+    assert result, (
+        "No stable Flash models found — "
+        "see [DIAG] output above to fix SKIP_TAGS in _fetch_flash_models()"
+    )
+    print(f"[PASS] fetch flash models: {result}")
+
+
 def test_discord_connectivity():
     import os
     import requests
@@ -93,6 +142,8 @@ if __name__ == "__main__":
         test_imports_and_image_part,
         test_dotenv_import,
         test_gemini_connectivity,
+        test_fetch_flash_models_diagnostic,
+        test_fetch_flash_models,
         test_discord_connectivity,
     ]
     failed = 0

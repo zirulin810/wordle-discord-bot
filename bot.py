@@ -19,6 +19,28 @@ DISCORD_TOKEN     = os.environ["DISCORD_TOKEN"]
 WATCH_CHANNEL_IDS = [int(x) for x in os.environ["WATCH_CHANNEL_IDS"].split(",") if x.strip()]
 
 client_genai = genai.Client(api_key=GEMINI_API_KEY)
+_SKIP_TAGS = ("preview", "exp", "latest", "tts", "audio", "live", "-image")
+
+
+def _fetch_flash_models() -> list[str]:
+    try:
+        result = []
+        for m in client_genai.models.list():
+            name = m.name  # e.g., "models/gemini-2.5-flash"
+            if "flash" not in name:
+                continue
+            if any(tag in name for tag in _SKIP_TAGS):
+                continue
+            result.append(name.removeprefix("models/"))
+        result.sort(reverse=True)
+        if not result:
+            raise RuntimeError("no available Flash models found")
+        print(f"[INFO] available Flash models: {result}")
+        return result
+    except Exception as e:
+        raise RuntimeError(f"failed to list Gemini models: {e}") from e
+    
+GEMINI_MODELS = _fetch_flash_models()
 
 def build_prompt() -> str:
     today = datetime.now(TW_TZ).strftime("%Y/%m/%d")
@@ -42,8 +64,7 @@ async def analyze_image(image_bytes: bytes) -> str:
     image = Image.open(io.BytesIO(image_bytes))
     mime_type = Image.MIME.get(image.format, "image/jpeg")
     image_part = genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-    models = ["gemini-2.5-flash", "gemini-2.0-flash"]
-    for attempt, model in enumerate(models):
+    for attempt, model in enumerate(GEMINI_MODELS):
         try:
             response = await asyncio.to_thread(
                 client_genai.models.generate_content,
@@ -52,8 +73,8 @@ async def analyze_image(image_bytes: bytes) -> str:
             )
             return response.text.strip()
         except genai_errors.ServerError as e:
-            print(f"[WARN] {model} failed ({e}){', retrying with fallback model' if attempt < len(models) - 1 else ', no more fallback models'}")
-            if attempt == len(models) - 1:
+            print(f"[WARN] {model} failed ({e}){', retrying with fallback model' if attempt < len(GEMINI_MODELS) - 1 else ', no more fallback models'}")
+            if attempt == len(GEMINI_MODELS) - 1:
                 raise
 
 

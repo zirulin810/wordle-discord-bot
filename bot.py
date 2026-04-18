@@ -62,6 +62,7 @@ async def analyze_image(image_bytes: bytes, date_str: str) -> str:
                 model=model,
                 contents=[build_prompt(date_str), part],
             )
+            print(f"[INFO] model used: {model}")
             return r.text.strip()
         except genai_errors.ServerError as e:
             has_fallback = i < len(GEMINI_MODELS) - 1

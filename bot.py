@@ -13,7 +13,6 @@ from datetime import datetime, timezone, timedelta
 load_dotenv()
 
 TW_TZ = timezone(timedelta(hours=8))
-
 GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
 DISCORD_TOKEN     = os.environ["DISCORD_TOKEN"]
 WATCH_CHANNEL_IDS = [int(x) for x in os.environ["WATCH_CHANNEL_IDS"].split(",") if x.strip()]
@@ -23,32 +22,25 @@ _SKIP_TAGS = ("preview", "exp", "latest", "tts", "audio", "live", "-image")
 
 
 def _fetch_flash_models() -> list[str]:
-    try:
-        result = []
-        for m in client_genai.models.list():
-            name = m.name  # e.g., "models/gemini-2.5-flash"
-            if "flash" not in name:
-                continue
-            if any(tag in name for tag in _SKIP_TAGS):
-                continue
-            result.append(name.removeprefix("models/"))
-        result.sort(reverse=True)
-        if not result:
-            raise RuntimeError("no available Flash models found")
-        print(f"[INFO] available Flash models: {result}")
-        return result
-    except Exception as e:
-        raise RuntimeError(f"failed to list Gemini models: {e}") from e
-    
+    models = sorted(
+        [m.name.removeprefix("models/") for m in client_genai.models.list()
+         if "flash" in m.name and not any(t in m.name for t in _SKIP_TAGS)],
+        reverse=True,
+    )
+    if not models:
+        raise RuntimeError("no available Flash models found")
+    print(f"[INFO] available Flash models: {models}")
+    return models
+
 GEMINI_MODELS = _fetch_flash_models()
 
-def build_prompt() -> str:
-    today = datetime.now(TW_TZ).strftime("%Y/%m/%d")
+
+def build_prompt(date_str: str) -> str:
     return f"""
 該圖片為 Wordle 的遊戲截圖。
 請從圖片中辨識出今日的答案（如果有的話），並**嚴格**依照以下格式輸出，不得新增或省略任何欄位：
 
-{today}
+{date_str}
 <英文單字，大寫>
 <詞性縮寫> <繁體中文解釋>
 <一句英文例句>
@@ -60,47 +52,43 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 
-async def analyze_image(image_bytes: bytes) -> str:
+async def analyze_image(image_bytes: bytes, date_str: str) -> str:
     image = Image.open(io.BytesIO(image_bytes))
-    mime_type = Image.MIME.get(image.format, "image/jpeg")
-    image_part = genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-    for attempt, model in enumerate(GEMINI_MODELS):
+    part = genai.types.Part.from_bytes(data=image_bytes, mime_type=Image.MIME.get(image.format, "image/jpeg"))
+    for i, model in enumerate(GEMINI_MODELS):
         try:
-            response = await asyncio.to_thread(
+            r = await asyncio.to_thread(
                 client_genai.models.generate_content,
                 model=model,
-                contents=[build_prompt(), image_part],
+                contents=[build_prompt(date_str), part],
             )
-            return response.text.strip()
+            return r.text.strip()
         except genai_errors.ServerError as e:
-            print(f"[WARN] {model} failed ({e}){', retrying with fallback model' if attempt < len(GEMINI_MODELS) - 1 else ', no more fallback models'}")
-            if attempt == len(GEMINI_MODELS) - 1:
+            has_fallback = i < len(GEMINI_MODELS) - 1
+            print(f"[WARN] {model} failed ({e}), {'retrying with fallback model' if has_fallback else 'no more fallback models'}")
+            if not has_fallback:
                 raise
 
 
 def format_reply(filename: str, analysis: str) -> str:
-    is_spoiler = filename.startswith("SPOILER_")
     body = f"```\n{analysis}\n```"
-    if is_spoiler:
-        return f"||{body}||"
-    return body
+    return f"||{body}||" if filename.startswith("SPOILER_") else body
 
 
-async def process_image(session: aiohttp.ClientSession, url: str, filename: str) -> str:
+async def process_image(session: aiohttp.ClientSession, url: str, filename: str, date_str: str) -> str | None:
     async with session.get(url) as resp:
         if resp.status != 200:
             print(f"[WARN] failed to download image: {filename} (HTTP {resp.status})")
             return None
         image_bytes = await resp.read()
-
     print(f"[INFO] analyzing image: {filename}")
-    analysis = await analyze_image(image_bytes)
-    return format_reply(filename, analysis)
+    return format_reply(filename, await analyze_image(image_bytes, date_str))
 
 
 async def run_once():
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
-    today = datetime.now(TW_TZ).date()
+    now = datetime.now(TW_TZ)
+    date_str, today = now.strftime("%Y/%m/%d"), now.date()
     async with aiohttp.ClientSession(headers=headers) as session:
         for channel_id in WATCH_CHANNEL_IDS:
             async with session.get(f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=10") as resp:
@@ -110,70 +98,44 @@ async def run_once():
                 messages = await resp.json()
 
             for msg in messages:
-                msg_date = datetime.fromisoformat(msg["timestamp"]).astimezone(TW_TZ).date()
-                if msg_date != today:
+                if datetime.fromisoformat(msg["timestamp"]).astimezone(TW_TZ).date() != today:
                     continue
-
                 if msg.get("author", {}).get("bot"):
                     continue
-                attachments = msg.get("attachments", [])
-                image_attachments = [
-                    att for att in attachments
-                    if att.get("content_type", "").startswith("image/")
-                ]
-                if not image_attachments:
+                images = [a for a in msg.get("attachments", []) if a.get("content_type", "").startswith("image/")]
+                if not images:
                     continue
-
-                att = image_attachments[0]
-                reply_content = await process_image(session, att["url"], att["filename"])
-                if reply_content is None:
+                reply = await process_image(session, images[0]["url"], images[0]["filename"], date_str)
+                if not reply:
                     continue
-
-                payload = {
-                    "content": reply_content,
-                    "message_reference": {"message_id": msg["id"]}
-                }
-                async with session.post(f"https://discord.com/api/v10/channels/{channel_id}/messages", json=payload) as reply_resp:
-                    if reply_resp.status == 200:
-                        print(f"[OK] replied to message ID: {msg['id']}")
-                    else:
-                        print(f"[ERROR] reply failed: HTTP {reply_resp.status}")
+                payload = {"content": reply, "message_reference": {"message_id": msg["id"]}}
+                async with session.post(f"https://discord.com/api/v10/channels/{channel_id}/messages", json=payload) as r:
+                    ok = r.status == 200
+                    print(f"[{'OK' if ok else 'ERROR'}] replied to message {msg['id']}" + ("" if ok else f" (HTTP {r.status})"))
                 break
 
 
 @client.event
 async def on_ready():
     print(f"[OK] bot online: {client.user} (ID: {client.user.id})")
-    if WATCH_CHANNEL_IDS:
-        print(f"[INFO] watching channel IDs: {WATCH_CHANNEL_IDS}")
-    else:
-        print("[INFO] watching all channels")
+    print(f"[INFO] watching channel IDs: {WATCH_CHANNEL_IDS}" if WATCH_CHANNEL_IDS else "[INFO] watching all channels")
 
 
 @client.event
 async def on_message(message: discord.Message):
-    if message.author == client.user:
+    if message.author == client.user or (WATCH_CHANNEL_IDS and message.channel.id not in WATCH_CHANNEL_IDS):
         return
-
-    if WATCH_CHANNEL_IDS and message.channel.id not in WATCH_CHANNEL_IDS:
+    images = [a for a in message.attachments if a.content_type and a.content_type.startswith("image/")]
+    if not images:
         return
-
-    image_attachments = [
-        att for att in message.attachments
-        if att.content_type and att.content_type.startswith("image/")
-    ]
-
-    if not image_attachments:
-        return
-
+    date_str = datetime.now(TW_TZ).strftime("%Y/%m/%d")
     async with message.channel.typing():
         async with aiohttp.ClientSession() as session:
-            for att in image_attachments:
+            for att in images:
                 try:
-                    reply = await process_image(session, att.url, att.filename)
+                    reply = await process_image(session, att.url, att.filename, date_str)
                     if reply:
                         await message.reply(reply)
-
                 except Exception as e:
                     print(f"[ERROR] failed to process image: {e}")
 

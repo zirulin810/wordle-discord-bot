@@ -1,7 +1,7 @@
 name: daily-wordle
 on:
   schedule:
-    - cron: "30 14 * * *"
+    - cron: "15 14 * * *"
   workflow_dispatch:
 jobs:
   run:

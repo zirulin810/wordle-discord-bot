@@ -55,12 +55,13 @@ client = discord.Client(intents=intents)
 async def analyze_image(image_bytes: bytes, date_str: str) -> str:
     image = Image.open(io.BytesIO(image_bytes))
     part = genai.types.Part.from_bytes(data=image_bytes, mime_type=Image.MIME.get(image.format, "image/jpeg"))
+    prompt = build_prompt(date_str)
     for i, model in enumerate(GEMINI_MODELS):
         try:
             r = await asyncio.to_thread(
                 client_genai.models.generate_content,
                 model=model,
-                contents=[build_prompt(date_str), part],
+                contents=[prompt, part],
             )
             print(f"[INFO] model used: {model}")
             return r.text.strip()

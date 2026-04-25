@@ -52,24 +52,40 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 
+def _is_rate_limit(e: Exception) -> bool:
+    msg = str(e).upper()
+    return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "QUOTA" in msg
+
+
 async def analyze_image(image_bytes: bytes, date_str: str) -> str:
     image = Image.open(io.BytesIO(image_bytes))
     part = genai.types.Part.from_bytes(data=image_bytes, mime_type=Image.MIME.get(image.format, "image/jpeg"))
     prompt = build_prompt(date_str)
     for i, model in enumerate(GEMINI_MODELS):
-        try:
-            r = await asyncio.to_thread(
-                client_genai.models.generate_content,
-                model=model,
-                contents=[prompt, part],
-            )
-            print(f"[INFO] model used: {model}")
-            return r.text.strip()
-        except genai_errors.ServerError as e:
-            has_fallback = i < len(GEMINI_MODELS) - 1
-            print(f"[WARN] {model} failed ({e}), {'retrying with fallback model' if has_fallback else 'no more fallback models'}")
-            if not has_fallback:
-                raise
+        delay = 10
+        while True:
+            try:
+                r = await asyncio.to_thread(
+                    client_genai.models.generate_content,
+                    model=model,
+                    contents=[prompt, part],
+                )
+                print(f"[INFO] model used: {model}")
+                return r.text.strip()
+            except genai_errors.ClientError as e:
+                if _is_rate_limit(e):
+                    print(f"[WARN] {model} rate limited ({e}), retrying in {delay}s")
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, 300)
+                else:
+                    print(f"[ERROR] {model} client error ({e})")
+                    raise
+            except genai_errors.ServerError as e:
+                has_fallback = i < len(GEMINI_MODELS) - 1
+                print(f"[WARN] {model} server error ({e}), {'trying fallback model' if has_fallback else 'no more fallback models'}")
+                if not has_fallback:
+                    raise
+                break
 
 
 def format_reply(filename: str, analysis: str) -> str:
